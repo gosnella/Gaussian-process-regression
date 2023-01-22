@@ -1,6 +1,4 @@
 
-# COMPOUND RANKING -------------------------------------------------------
-
 
 # packages
 {
@@ -109,7 +107,7 @@ fp$C <- factor(fp$C, levels = compound_levels)
 
 fp <- fp[order(fp$C),] # reorder according to factor levels
 
-#### Read and process glasshouse data ####
+#### Read and process fictitious data ####
 
 dat <- read.csv('data.csv',header = T)
 
@@ -339,7 +337,7 @@ covs <- c("mixed", "tanimoto", "exponential", "gaussian")
 
 #### Single Model Fitting ####
 
-tts <- 0.8
+tts <- 0.8 #  80% training data 
 gpmix <- gp_regression(Fixed, Random, fp, dat, "mixed", tts, -1)
 gptan <- gp_regression(Fixed, Random, fp, dat, "tanimoto", tts, -1)
 gpexp <- gp_regression(Fixed, Random, fp, dat, "exponential", tts, c(-1,-1))
