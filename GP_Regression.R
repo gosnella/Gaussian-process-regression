@@ -10,7 +10,7 @@
 
 # functions
 {
-
+  
   #Tanimoto matrix for existing compounds with existing compounds
   tanimoto <- function(x, similarity=FALSE) {
     n = dim(x)[1] # nrow x
@@ -21,7 +21,7 @@
     if(similarity) return(res)
     else return(1-res)
   }
-
+  
   #cholesky inverse function, quicker than chol2inv(col)
   cholinv <- function(A) {
     ## invert a +ve definite matrix via pivoted Cholesky with diagonal
@@ -120,20 +120,36 @@ dat$C <- factor(dat$C, levels = compound_levels) # define factor levels of the c
 dat$log_n1 <- log(dat$n1/max(dat$n1)) # take the log of the scaled rates
 dat$yt <- qlogis(pmin(99, pmax(1, dat$y))/100) # logit transform the damages
 
-Fixed <- ~ log_n1 + c1 + c2 + c3 + c4 # regressor variables
-Random <- ~ C - 1 # GP without intercept
+# dat <- dat[,!names(dat) %in% "y"] # drop response variable
 
-gp_regression <- function(Fixed, Random, 
+X <- ~ log_n1 + c1 + c2 + c3 + c4 # regressor variables
+u <- ~ C - 1 # GP without intercept
+
+gp_regression <- function(X, u, y, 
                           fp, dat, 
                           gpcov,
                           tts, params,
                           returnData = TRUE){
   
+  #' X: formula, terms for the fixed effects
+  #' u: formula, term for the random effect excluding intercept
+  #' y: vector, response variable measured on a continuous scale
   #' fp: matrix, fingerprints with label column
   #' dat: matrix, data 
   #' gpcov: string,covariance function for GP, choice of c("mixed","tanimoto","exponential","gaussian") 
   #' tts: float between 0 and 1, fraction for train/test split, e.g., tts = 0.8 is 80% training data 20% test.
   #' returnData: logical, return data used for model fitting/testing
+  #' 
+  #' Returns parameters and standard errors of the fixed and random effects
+  #' Returns root mean squared error, absolute error, AIC, score, and optimisation time in minutes
+
+  if (typeof(X)!="language") stop("X must be a formula")
+  if (typeof(u)!="language") stop("u must be a formula")
+
+  
+  if (!gpcov%in%c("mixed", "tanimoto", "exponential", "gaussian")) stop("unsupported covariance")
+  if (!(0<=tts & tts<=1)) stop("test-train split must be in range [0, 1]")
+  
   
   out <- list()
   out$Model <- out$Data <- out$Fit <- list()  
@@ -148,18 +164,18 @@ gp_regression <- function(Fixed, Random,
   train_set <- dat[train_samp,]
   test_set <- dat[test_samp,]
   
-  y_train <- train_set$yt
-  y_test <- test_set$yt
+  y_train <- train_set$y
+  y_test <- test_set$y
   
   #### Design matrices for regressors and random effects ####
   
-  H <- model.matrix(Fixed, data = train_set) # regressor design matrix for training set
-  H_star <- model.matrix(Fixed, data = test_set) # regressor design matrix for test set
+  H <- model.matrix(X, data = train_set) # regressor design matrix for training set
+  H_star <- model.matrix(X, data = test_set) # regressor design matrix for test set
   
-  compound_train <- model.matrix(Random, data = train_set) # indicator matrix for compounds in train set
-  compound_test <- model.matrix(Random, data = test_set) # indicator matrix for compounds in test set
+  compound_train <- model.matrix(u, data = train_set) # indicator matrix for compounds in train set
+  compound_test <- model.matrix(u, data = test_set) # indicator matrix for compounds in test set
   
-  distance_compound <- as.matrix(dist(fp[!names(fp)%in%labels(terms(Random))], method = "binary")) # distance matrix based on Tanimoto (Jaccard) metric
+  distance_compound <- as.matrix(dist(fp[!names(fp)%in%labels(terms(u))], method = "binary")) # distance matrix based on Tanimoto (Jaccard) metric
   
   if (gpcov=="mixed"){
     ll <- lme
@@ -324,7 +340,7 @@ gp_regression <- function(Fixed, Random,
     out$Data$DistMat <- NULL
   }
   
-  out$Model$formula_fixed <- Fixed
+  out$Model$formula_fixed <- X
   out$Model$formula_random <- Random
   out$Model$fcor <- gpcov
   
@@ -338,10 +354,10 @@ covs <- c("mixed", "tanimoto", "exponential", "gaussian")
 #### Single Model Fitting ####
 
 tts <- 0.8 #  80% training data 
-gpmix <- gp_regression(Fixed, Random, fp, dat, "mixed", tts, -1)
-gptan <- gp_regression(Fixed, Random, fp, dat, "tanimoto", tts, -1)
-gpexp <- gp_regression(Fixed, Random, fp, dat, "exponential", tts, c(-1,-1))
-gpgau <- gp_regression(Fixed, Random, fp, dat, "gaussian", tts, c(-1,-1))
+gpmix <- gp_regression(X, u, "yt", fp, dat, "mixed", tts, -1)
+gptan <- gp_regression(X, u, "yt", fp, dat, "tanimoto", tts, -1)
+gpexp <- gp_regression(X, u, "yt", fp, dat, "exponential", tts, c(-1,-1))
+gpgau <- gp_regression(X, u, "yt", fp, dat, "gaussian", tts, c(-1,-1))
 
 df_metric <- rbind(gpmix$Metrics,
                    gptan$Metrics,
@@ -371,14 +387,14 @@ for (mod in 1:nrow(models)){  # cross validation
   
   if (models[mod, 2] %in% c("mixed", "tanimoto")) pars <- -1 else pars <- c(-1, -1)
   
-  gpmod <- gp_regression(Fixed, Random,
+  gpmod <- gp_regression(X, u, "yt",
                          fp, dat,
                          models[mod, 2],
                          train_prop, pars,
                          FALSE)
   
   model_metrics <- rbind(cbind(gpmod$Model$fcor, gpmod$Metrics), model_metrics)
-
+  
 }
 
 metrics_grouped = rename(model_metrics, K = 1) %>%
