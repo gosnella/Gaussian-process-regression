@@ -120,8 +120,6 @@ dat$C <- factor(dat$C, levels = compound_levels) # define factor levels of the c
 dat$log_n1 <- log(dat$n1/max(dat$n1)) # take the log of the scaled rates
 dat$yt <- qlogis(pmin(99, pmax(1, dat$y))/100) # logit transform the damages
 
-# dat <- dat[,!names(dat) %in% "y"] # drop response variable
-
 X <- ~ log_n1 + c1 + c2 + c3 + c4 # regressor variables
 u <- ~ C - 1 # GP without intercept
 
@@ -133,7 +131,7 @@ gp_regression <- function(X, u, y,
   
   #' X: formula, terms for the fixed effects
   #' u: formula, term for the random effect excluding intercept
-  #' y: vector, response variable measured on a continuous scale
+  #' y: string, name of the response variable which should be measured on a continuous scale
   #' fp: matrix, fingerprints with label column
   #' dat: matrix, data 
   #' gpcov: string,covariance function for GP, choice of c("mixed","tanimoto","exponential","gaussian") 
@@ -176,19 +174,9 @@ gp_regression <- function(X, u, y,
   compound_test <- model.matrix(u, data = test_set) # indicator matrix for compounds in test set
   
   distance_compound <- as.matrix(dist(fp[!names(fp)%in%labels(terms(u))], method = "binary")) # distance matrix based on Tanimoto (Jaccard) metric
-  
-  if (gpcov=="mixed"){
-    ll <- lme
-  }
-  if (gpcov=="tanimoto"){
-    ll <- ltan
-  }
-  if (gpcov=="exponential"){
-    ll <- lexp
-  }
-  if (gpcov=="gaussian"){
-    ll <- lgau
-  }
+
+  covs <- c("mixed", "tanimoto", "exponential", "gaussian")
+  ll <- switch(which(gpcov==covs), lme, ltan, lexp, lgau)
   
   #### optimise the profile-likelihood ####
   
@@ -221,7 +209,7 @@ gp_regression <- function(X, u, y,
     K <- 1 - distance_compound
   }
   if (gpcov=="exponential"){
-    K <- exp(-(distance_compound/l)^0.5)
+    K <- exp(-sqrt(distance_compound/l))
     
   }
   if (gpcov=="gaussian"){
